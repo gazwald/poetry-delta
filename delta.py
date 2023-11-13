@@ -1,13 +1,15 @@
 #!/usr/bin/env python
 import tomllib
+from datetime import datetime
 from pathlib import Path
+from pprint import pprint
 
 import click
 import git
 from rich.console import Console
 from rich.table import Table
 
-DEFAULT_BRANCH: str = "master"
+DEFAULT_BRANCH: str = "main"
 
 
 def _load(repo: git.Repo, commit: str, filepath: str) -> dict:
@@ -35,18 +37,27 @@ def _generate_table_from_delta(delta: dict) -> Table:
     Generate a rich table from the delta
     """
     table = Table(title="Delta", show_header=True, header_style="bold magenta")
-    table.add_column("Commit", style="dim", width=12)
-    table.add_column("Package", style="dim", width=12)
-    table.add_column("poetry.lock", style="dim", width=12)
-    table.add_column("pyproject.toml", style="dim", width=12)
+    table.add_column("Commit", style="dim")
+    table.add_column("Date", style="dim")
+    table.add_column("Package", style="dim")
+    table.add_column("poetry.lock", style="dim")
+    table.add_column("pyproject.toml", style="dim")
 
-    for commit, packages in delta.items():
-        for package, versions in packages.items():
+    for commit, files in delta.items():
+        lock_version: dict = files.get("poetry.lock", {})
+        pyproject_version: dict = files.get("pyproject.toml", {})
+        for package, version in lock_version.items():
+            date: str = datetime.fromtimestamp(files["date"]).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            style: str = "green"
             table.add_row(
                 commit[:7],
+                date,
                 package,
-                versions["poetry.lock"],
-                versions["pyproject.toml"],
+                version,
+                pyproject_version.get(package, ""),
+                style=style,
             )
 
     return table
@@ -60,22 +71,33 @@ def main(branch: str = DEFAULT_BRANCH):
 
     repo: git.Repo = _fetch_repo(".")
     delta: dict = {}
+    commits: list[str] = []
+    add_commit: bool = False
 
     for commit in repo.iter_commits(branch, paths=[poetry_lock, pyproject_toml]):
         poetry_lock_data: dict = _load(repo, commit, str(poetry_lock))
         pyproject_toml_data: dict = _load(repo, commit, str(pyproject_toml))
 
-        if poetry_lock_data or pyproject_toml_data:
-            delta[commit.hexsha] = {
-                "poetry.lock": {
-                    package["name"]: package["version"]
-                    for package in poetry_lock_data["packages"]
-                },
-                "pyproject.toml": {
-                    package["name"]: package["version"]
-                    for package in pyproject_toml_data["tool"]["poetry"]["dependencies"]
-                },
+        delta[commit.hexsha] = {
+            "date": commit.committed_date,
+            "poetry.lock": {},
+            "pyproject.toml": {},
+        }
+        add_commit = False
+        if poetry_lock_data and "package" in poetry_lock_data:
+            delta[commit.hexsha]["poetry.lock"] = {
+                package["name"]: package["version"]
+                for package in poetry_lock_data["package"]
             }
+            add_commit = True
+        if pyproject_toml_data:
+            delta[commit.hexsha]["pyproject.toml"] = pyproject_toml_data["tool"][
+                "poetry"
+            ]["dependencies"]
+            add_commit = True
+
+        if add_commit:
+            commits.append(commit.hexsha)
 
     table: Table = _generate_table_from_delta(delta)
     console = Console()
