@@ -3,7 +3,7 @@ import tomllib
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from pprint import pprint
+from typing import Generator
 
 import click
 import git
@@ -36,16 +36,15 @@ StateStyleMap: dict[State, str] = {
 
 class Compare:
     current_state: State = State.UNCHANGED
-    sha: str
     package: str
     current_versions: dict[str, str]
     previous_versions: dict[str, str]
 
     def __init__(
         self,
+        package: str,
         current_versions: dict[str, str],
         previous_versions: dict[str, str],
-        package: str,
     ) -> None:
         self.package = package
         self.current_versions = current_versions
@@ -116,7 +115,75 @@ class Compare:
         return self.previous_versions.get(self.package, None)
 
 
-def _load(repo: git.Repo, commit: str, filepath: str) -> dict:
+class CommitCompare:
+    _commit: str
+    _current_commit_data: dict[str, dict] = {}
+    _previous_commit_data: dict[str, dict] = {}
+    _ignore_unchanged: bool
+
+    def __init__(
+        self,
+        commit: str,
+        path: str,
+        current_commit_data: dict[str, dict],
+        previous_commit_data: dict[str, dict],
+        ignore_unchanged: bool = True,
+    ) -> None:
+        self._commit = commit
+        self._current_commit_data = current_commit_data
+        self._previous_commit_data = previous_commit_data
+        self._ignore_unchanged = ignore_unchanged
+        self.changes = self._compare(path)
+
+    def _get_current(self, path: str) -> dict:
+        return self._current_commit_data.get(path, {})
+
+    def _get_previous(self, path: str) -> dict:
+        return self._previous_commit_data.get(path, {})
+
+    def _current(self, path: str) -> Generator:
+        for package, version in self._get_current(path).items():
+            yield package, version
+
+    def _previous(self, path: str) -> Generator:
+        for package, version in self._get_previous(path).items():
+            yield package, version
+
+    def _get_current_date(self, path: str) -> str:
+        return self._format_timestamp(self._get_current(path).get("date", ""))
+
+    def _compare(self, path: str = "poetry.lock") -> list[dict[str, list[str] | str]]:
+        rows: list[dict[str, list[str] | str]] = []
+        date: str = self._get_current_date(path)
+
+        for package, version in self._current(path):
+            comparison = Compare(
+                package, self._get_current(path), self._get_previous(path)
+            )
+            if self._ignore_unchanged and comparison.state == State.UNCHANGED:
+                continue
+
+            rows.append(
+                {
+                    "row": [
+                        self._commit[:7],
+                        date,
+                        package,
+                        version,
+                        comparison.state.name,
+                    ],
+                    "style": StateStyleMap[comparison.state],
+                }
+            )
+
+        return rows
+
+    @staticmethod
+    def _format_timestamp(date: float) -> str:
+        return datetime.fromtimestamp(date).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _load_file(repo: git.Repo, commit: str, filepath: str) -> dict:
     """
     Load the lock file from a commit
     """
@@ -149,59 +216,36 @@ def _create_table() -> Table:
     return table
 
 
-def _generate_table_from_delta(delta: dict, hide_unchanged: bool = True) -> Table:
+def _generate_table_from_delta(delta: dict, ignore_unchanged: bool = True) -> Table:
     """
     Generate a rich table from the delta
     """
     table = _create_table()
-    previous_lock_version: dict = {}
-    previous_pyproject_version: dict = {}
+    previous_data: dict = {}
 
-    for commit, files in delta.items():
-        lock_version: dict = files.get("poetry.lock", {})
-        pyproject_version: dict = files.get("pyproject.toml", {})
+    for commit, current_data in delta.items():
+        comparison = CommitCompare(
+            commit, "poetry.lock", current_data, previous_data, ignore_unchanged
+        )
+        for change in comparison.changes:
+            table.add_row(*change["row"], style=change["style"])
 
-        for package, version in lock_version.items():
-            lock_comparison = Compare(lock_version, previous_lock_version, package)
-            pyproject_comparison = Compare(
-                pyproject_version, previous_pyproject_version, package
-            )
-            if hide_unchanged and lock_comparison.state == State.UNCHANGED:
-                continue
-
-            date: str = datetime.fromtimestamp(files["date"]).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-            table.add_row(
-                commit[:7],
-                date,
-                package,
-                version,
-                pyproject_version.get(package, ""),
-                lock_comparison.state.name,
-                style=StateStyleMap[lock_comparison.state],
-            )
-
-        previous_lock_version = lock_version
-        previous_pyproject_version = pyproject_version
+        previous_data = current_data
 
     return table
 
 
-def main(branch: str = DEFAULT_BRANCH):
-    poetry_lock: Path = Path("poetry.lock")
-    pyproject_toml: Path = Path("pyproject.toml")
-    if not poetry_lock.exists() or not pyproject_toml.exists():
-        raise click.ClickException("poetry.lock or pyproject.toml not found")
+def _load_files(repo: git.Repo, commit: str, paths: list[Path]) -> dict:
+    return {str(path): _load_file(repo, commit, str(path)) for path in paths}
 
-    repo: git.Repo = _fetch_repo(".")
+
+def _gather_commits(repo: git.Repo, branch: str, paths: dict[str, Path]) -> dict:
     delta: dict = {}
     commits: list[str] = []
     add_commit: bool = False
 
-    for commit in repo.iter_commits(branch, paths=[poetry_lock, pyproject_toml]):
-        poetry_lock_data: dict = _load(repo, commit, str(poetry_lock))
-        pyproject_toml_data: dict = _load(repo, commit, str(pyproject_toml))
+    for commit in repo.iter_commits(branch, paths=paths):
+        data = _load_files(repo, commit, list(paths.values()))
 
         delta[commit.hexsha] = {
             "date": commit.committed_date,
@@ -209,20 +253,49 @@ def main(branch: str = DEFAULT_BRANCH):
             "pyproject.toml": {},
         }
         add_commit = False
+
+        for path, path_contents in data.items():
+            match path:
+                case "poetry.lock": 
+                    _load_poetry(path_contents)
+                case "pyproject.toml":
+                    _load_pyproject(path_contents)
+                case _:
+                    raise Exception("Nope")
+        # TODO: Move into methods
         if poetry_lock_data and "package" in poetry_lock_data:
             delta[commit.hexsha]["poetry.lock"] = {
                 package["name"]: package["version"]
                 for package in poetry_lock_data["package"]
             }
             add_commit = True
-        if pyproject_toml_data:
-            delta[commit.hexsha]["pyproject.toml"] = pyproject_toml_data["tool"][
-                "poetry"
-            ]["dependencies"]
+        if pyproject_data:
+            delta[commit.hexsha]["pyproject.toml"] = pyproject_data["tool"]["poetry"][
+                "dependencies"
+            ]
             add_commit = True
 
         if add_commit:
             commits.append(commit.hexsha)
+
+    return delta, commits
+
+
+def _preflight(paths: list[Path]):
+    messages: list[str] = []
+    for path in paths:
+        messages.append(f"{path} not found")
+
+    if messages:
+        raise click.ClickException("Following errors triggered: {'\n'.join(messages)}")
+
+
+def main(branch: str = DEFAULT_BRANCH):
+    poetry_lock: Path = Path("poetry.lock")
+    pyproject: Path = Path("pyproject.toml")
+    _preflight([poetry_lock, pyproject])
+
+    repo: git.Repo = _fetch_repo(".")
 
     table: Table = _generate_table_from_delta(delta)
     console = Console()
