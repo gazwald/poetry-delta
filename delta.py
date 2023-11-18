@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import sys
 import tomllib
 from datetime import datetime
 from enum import Enum, auto
@@ -26,10 +27,10 @@ class State(Enum):
 StateStyleMap: dict[State, str] = {
     State.CHANGED: "green",
     State.UNCHANGED: "dim",
-    State.ADDED: "green",
+    State.ADDED: "blue",
     State.REMOVED: "red",
     State.UPGRADED: "green",
-    State.DOWNGRADED: "red",
+    State.DOWNGRADED: "orange",
     State.ERROR: "white",
 }
 
@@ -145,6 +146,7 @@ class CommitCompare:
     _date_timestamp: float
     _current_commit_data: dict[str, dict] = {}
     _previous_commit_data: dict[str, dict] = {}
+    _package: str | None
     _ignore_unchanged: bool
 
     def __init__(
@@ -153,9 +155,11 @@ class CommitCompare:
         path: str,
         current_commit_data: dict[str, dict],
         previous_commit_data: dict[str, dict],
+        package: str | None = None,
         ignore_unchanged: bool = True,
     ) -> None:
         self._commit = commit
+        self._package = package
         self._date_timestamp = current_commit_data["date"]
         self._date_formatted = self._format_timestamp(self._date_timestamp)
         self._current_commit_data = current_commit_data
@@ -181,6 +185,9 @@ class CommitCompare:
         rows: list[dict[str, list[str] | str]] = []
 
         for package, version in self._current(path):
+            if self._package is not None and package != self._package:
+                continue
+
             comparison = Compare(
                 package, self._get_current(path), self._get_previous(path)
             )
@@ -192,6 +199,7 @@ class CommitCompare:
                     "row": [
                         self._commit[:7],
                         self._date_formatted,
+                        self._current_commit_data["author"],
                         package,
                         version,
                         comparison.state.name,
@@ -215,12 +223,17 @@ class ProcessRepo:
         Path("pyproject.toml"),
     ]
 
-    def __init__(self, path: str | Path | None, branch: str | None = None) -> None:
+    def __init__(
+        self,
+        path: str | Path | None,
+        branch: str | None = None,
+        package: str | None = None,
+    ) -> None:
         path = self._check_paths(path)
         self.repo = self._fetch_repo(path)
         self.branch = self._pick_branch() if branch is None else branch
         delta = self._gather_commits()
-        rows = self._generate_table_rows_from_delta(delta)
+        rows = self._generate_table_rows_from_delta(delta, package)
         self._print_table(rows)
 
     def _check_paths(self, path: str | Path | None) -> Path:
@@ -280,7 +293,8 @@ class ProcessRepo:
     @staticmethod
     def _load_pyproject(data: dict) -> dict:
         if "tool" in data:
-            return data["tool"]["poetry"]["dependencies"]
+            if "poetry" in data["tool"]:
+                return data["tool"]["poetry"]["dependencies"]
 
         return {}
 
@@ -303,21 +317,21 @@ class ProcessRepo:
         )
         table.add_column("Commit")
         table.add_column("Date")
+        table.add_column("Author")
         table.add_column("Package")
         table.add_column("poetry.lock")
-        table.add_column("pyproject.toml")
-        table.add_column("state")
+        table.add_column("State")
         return table
 
     def _generate_table_rows_from_delta(
-        self, delta: dict, ignore_unchanged: bool = True
+        self, delta: dict, package: str | None = None, ignore_unchanged: bool = True
     ) -> list[dict[str, list[str] | str]]:
         table_data: list[dict[str, list[str] | str]] = []
         previous_data: dict = {}
 
         for commit, data in delta.items():
             comparison = CommitCompare(
-                commit, "poetry.lock", data, previous_data, ignore_unchanged
+                commit, "poetry.lock", data, previous_data, package, ignore_unchanged
             )
             table_data.append(comparison.changes)
 
@@ -335,6 +349,7 @@ class ProcessRepo:
 
             delta[commit.hexsha] = {
                 "date": commit.committed_date,
+                "author": commit.author.name,
                 "poetry.lock": {},
                 "pyproject.toml": {},
             }
@@ -367,8 +382,20 @@ class ProcessRepo:
         console.print(table)
 
 
-def main(path: Path | None = None, branch: str | None = None):
-    ProcessRepo(path, branch)
+def main():
+    args = sys.argv[1:]
+    path = Path(args.pop(0).strip()) if args else None
+    branch = args.pop(0).strip() if args else None
+    package = args.pop(0).strip() if args else None
+
+    if path is not None:
+        click.echo(f"Processing {path}")
+    if branch is not None:
+        click.echo(f"On branch {branch}")
+    if package is not None:
+        click.echo(f"Filtering on package {package}")
+
+    ProcessRepo(path, branch, package)
 
 
 if __name__ == "__main__":
