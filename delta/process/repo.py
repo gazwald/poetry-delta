@@ -1,9 +1,9 @@
 import tomllib
+from operator import itemgetter
 from pathlib import Path
 
 import click
 import git
-from operator import itemgetter
 from rich.console import Console
 from rich.table import Table
 
@@ -23,11 +23,12 @@ class ProcessRepo:
         path: str | Path | None,
         branch: str | None = None,
         package: str | None = None,
+        rev: str | None = None,
     ) -> None:
         path = self._check_paths(path)
         self.repo = self._fetch_repo(path)
         self.branch = self._pick_branch() if branch is None else branch
-        delta = self._gather_commits()
+        delta = self._gather_commits(rev)
         rows = self._generate_table_rows_from_delta(delta, package)
         self._print_table(rows)
 
@@ -134,9 +135,12 @@ class ProcessRepo:
 
         return table_data
 
-    def _gather_commits(self) -> dict:
+    def _gather_commits(self, rev: str | None) -> dict:
         delta: dict = {}
-        commits = list(self.repo.iter_commits(self.branch, paths=self.files))
+        if rev:
+            commits = list(self.repo.iter_commits(rev, paths=self.files))
+        else:
+            commits = list(self.repo.iter_commits(self.branch, paths=self.files))
         commits.reverse()
 
         for commit in commits:

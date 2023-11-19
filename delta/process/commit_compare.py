@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Any, Generator
 
-
 from process.compare import Compare
 from process.state import State, StateStyleMap
 
