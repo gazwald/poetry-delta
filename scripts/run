@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+./scripts/build
+
+echo "+++ Running poetry-delta +++"
+
+docker run \
+    --rm
+    --interactive \
+    --tty \
+    --volume "$(pwd):/mnt" \
+    poetry-delta \
+    "${@}"
