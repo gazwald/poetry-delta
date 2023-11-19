@@ -60,6 +60,10 @@ class CommitCompare:
             if self._ignore_unchanged and comparison.state == State.UNCHANGED:
                 continue
 
+            pyproject_version: str = self._get_current("pyproject.toml").get(
+                package, ""
+            )
+
             rows.append(
                 {
                     "row": [
@@ -68,6 +72,7 @@ class CommitCompare:
                         self._current_commit_data["author"],
                         package,
                         version,
+                        pyproject_version,
                         comparison.state.name,
                     ],
                     "style": StateStyleMap[comparison.state],

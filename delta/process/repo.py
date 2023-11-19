@@ -88,18 +88,25 @@ class ProcessRepo:
 
     @staticmethod
     def _load_pyproject(data: dict) -> dict:
-        if "tool" in data:
-            if "poetry" in data["tool"]:
-                return data["tool"]["poetry"]["dependencies"]
+        poetry: dict = data.get("tool", {}).get("poetry", {})
+        if not poetry:
+            return {}
 
-        return {}
+        dependencies: dict = {
+            package: version
+            for group, specification in poetry.get("group", {}).items()
+            for package, version in specification.get("dependencies").items()
+        }
+        dependencies.update(poetry.get("dependencies", {}))
+
+        return dependencies
 
     @staticmethod
     def _fetch_repo(path: Path) -> git.Repo:
         try:
             repo = git.Repo(path)
         except git.exc.InvalidGitRepositoryError:
-            raise click.ClickException(f"Path {path} is not a git repository")
+            click.echo(f"Path {path} is not a git repository")
 
         return repo
 
@@ -109,13 +116,14 @@ class ProcessRepo:
             title="Delta",
             show_header=True,
             show_lines=True,
-            header_style="bold magenta",
+            header_style="magenta",
         )
         table.add_column("Commit")
         table.add_column("Date")
         table.add_column("Author")
         table.add_column("Package")
         table.add_column("poetry.lock")
+        table.add_column("pyproject.toml")
         table.add_column("State")
         return table
 
