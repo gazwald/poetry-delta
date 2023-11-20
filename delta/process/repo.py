@@ -113,7 +113,6 @@ class ProcessRepo:
     @staticmethod
     def _create_table() -> Table:
         table = Table(
-            title="Delta",
             show_header=True,
             show_lines=True,
             header_style="magenta",
