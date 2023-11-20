@@ -8,8 +8,8 @@ cd "$(git rev-parse --show-toplevel)"
 echo "+++ Running poetry-delta +++"
 
 docker run \
-    --rm
     --interactive \
+    --rm \
     --tty \
     --volume "$(pwd):/mnt" \
     poetry-delta \
