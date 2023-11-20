@@ -5,12 +5,26 @@ cd "$(git rev-parse --show-toplevel)"
 
 ./scripts/build
 
+
+if [ -z "${1:-}" ]; then
+    REPO_PATH=${PWD}
+else
+    REPO_PATH=${1}
+    if test -d "${REPO_PATH}"; then
+        REPO_PATH=$(readlink -f "${REPO_PATH}")
+    else
+        echo "${REPO_PATH} does not exist or is not a directory."
+        exit 1
+    fi
+fi
+
 echo "+++ Running poetry-delta +++"
+echo "+++ Path: ${REPO_PATH} +++"
 
 docker run \
     --interactive \
     --rm \
     --tty \
-    --volume "$(pwd):/mnt" \
+    --volume "${REPO_PATH}:/mnt" \
     poetry-delta \
-    "${@}"
+    "${@:2}" # Skip the first two elements
