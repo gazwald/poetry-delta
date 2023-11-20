@@ -14,8 +14,13 @@ BRANCH: str = "main"
 )
 @click.option("--package", required=False, help="Package to filter on; e.g. boto3")
 @click.option("--rev", required=False, help="Rev, see `git rev-parse` for details.")
-def main(path: Path, branch: str, package: str | None = None, rev: str | None = None):
-    message: list[str] = [f"Processing {path}, on branch {branch}"]
+def main(
+    path: Path,
+    branch: str,
+    package: str | None = None,
+    rev: str | None = None,
+):
+    message: list[str] = [f"Inspecting branch '{branch}'"]
     if package is not None:
         message.append(f"Filtering on package {package}")
 
