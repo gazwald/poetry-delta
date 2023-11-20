@@ -41,10 +41,11 @@ $ ./scripts/run <path to your git repository>
 ...
 ```
 
-or, if you're running the container manually, you'll need to bind mount the path to the git repository to `/mnt` as
-that is where the container expects the repository to be.
+or, if you're running the container manually, you'll need to build the image, then bind mount the path to the git
+repository to `/mnt` as that is where the container expects the repository to be.
 
 ```console
+$ ./scripts/build
 $ docker run \
       --interactive \
       --rm \
