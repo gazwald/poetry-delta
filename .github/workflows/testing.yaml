@@ -34,12 +34,20 @@ jobs:
 
     - name: pylint
       run: |
-        pylint .
+        pylint delta/
 
     - name: black
       run: |
-        black --check .
+        black --check delta/
 
     - name: isort
       run: |
-        isort --check-only .
+        isort --check-only delta/
+
+    - name: shellcheck
+      run: |
+        shellcheck scripts/*
+
+    - name: hadolint
+      run: |
+        hadolint Dockerfile
