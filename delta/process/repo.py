@@ -55,7 +55,7 @@ class ProcessRepo:
 
         if messages:
             raise click.ClickException(
-                f"Following errors triggered:\n{'\n'.join(messages)}"
+                "\n".join(["Following errors triggered:", *messages])
             )
 
         return path
@@ -98,8 +98,10 @@ class ProcessRepo:
             for package, version in specification.get("dependencies").items()
         }
         dependencies.update(poetry.get("dependencies", {}))
-
-        return dependencies
+        return {
+            package: version.get("version") if isinstance(version, dict) else version
+            for package, version in dependencies.items()
+        }
 
     @staticmethod
     def _fetch_repo(path: Path) -> git.Repo:
@@ -148,6 +150,7 @@ class ProcessRepo:
             commits = list(self.repo.iter_commits(rev, paths=self.files))
         else:
             commits = list(self.repo.iter_commits(self.branch, paths=self.files))
+
         commits.reverse()
 
         for commit in commits:
@@ -182,7 +185,7 @@ class ProcessRepo:
 
         for rows in delta:
             for row in rows:
-                table.add_row(*itemgetter("row")(row), style=itemgetter("style")(row))
+                table.add_row(*row.get("row"), style=row.get("style"))
 
         console = Console()
         console.print(table)
