@@ -15,6 +15,15 @@ def find_pyproject_path():
     print("pyproject.toml not found in the current directory or any parent directory.")
     return None
 
+def find_poetrylock_path():
+    current_dir = os.getcwd()
+    while current_dir != "/":
+        poetrylock_path = os.path.join(current_dir, "poetry.lock")
+        if os.path.isfile(poetrylock_path):
+            return poetrylock_path
+        current_dir = os.path.dirname(current_dir)
+    print("poetry.lock not found in the current directory or any parent directory.")
+    return None
 
 def get_poetry_project_name(pyproject_path):
     if pyproject_path:
