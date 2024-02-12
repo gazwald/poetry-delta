@@ -3,6 +3,7 @@ import os
 import json
 from process.state import State
 from process.compare import Compare
+from process import backup
 
 class Package:
     def __init__(self, name: str, version: str):
@@ -13,11 +14,9 @@ class Package:
         return f"{self.name}@{self.version}"
 
 
-
 class PoetryLock:
     def __init__(self, packages: List[dict]):
         self.packages = packages
-
 
     def convert_to_packages(self) -> List[Package]:
         return [Package(p['name'], p['version']) for p in self.packages]
