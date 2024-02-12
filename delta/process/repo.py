@@ -108,9 +108,8 @@ class ProcessRepo:
         try:
             repo = git.Repo(path)
         except git.exc.InvalidGitRepositoryError:
-            click.echo(f"Path {path} is not a git repository")
-
-        return repo
+            click.echo(f"Path {path} is not a git repository. Switching to local mode.")
+            return None  # Return None if the path is not a git repository
 
     @staticmethod
     def _create_table() -> Table:
