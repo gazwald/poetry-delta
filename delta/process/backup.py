@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 import toml
 
+backup_dir = os.path.join(os.getenv('POETRY_HOME'), "backup")
 
 def find_pyproject_path():
     current_dir = os.getcwd()
@@ -67,7 +68,7 @@ def autosave_project(pyproject_path):
             print("Failed to create autosave. Some files not found.")
 
 
-def get_autosave():
+def get_autosave(backup_dir):
     project_name = get_poetry_project_name(find_pyproject_path())
     if project_name:
         _, tmp_dir = get_autosave_dir(project_name, backup_dir)
@@ -81,7 +82,7 @@ def get_autosave():
     return None
 
 
-def get_last_backup():
+def get_last_backup(backup_dir):
     project_name = get_poetry_project_name(find_pyproject_path())
     if project_name:
         _, save_dir = get_save_dir(project_name, backup_dir)
